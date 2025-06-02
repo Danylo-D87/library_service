@@ -1,11 +1,11 @@
 from rest_framework.routers import DefaultRouter
 
-from books.views import BookViewSet
+from borrowings.views import BorrowingViewSet
 
-app_name = "books"
+app_name = "borrowing"
 
 router = DefaultRouter()
-router.register("books", BookViewSet, basename="book")
+router.register("borrowings", BorrowingViewSet, basename="borrowings")
 
 urlpatterns = [
     *router.urls,

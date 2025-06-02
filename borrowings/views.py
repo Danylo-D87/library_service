@@ -1,15 +1,16 @@
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date
 from rest_framework.decorators import action
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 
 from config.permissions import IsStaffUser
 from borrowings.models import Borrowing
 from borrowings.serializers import BorrowingSerializer
 
 
-class BorrowingsViewSet(viewsets.ModelViewSet):
+class BorrowingViewSet(viewsets.ModelViewSet):
     queryset = Borrowing.objects.all()
     serializer_class = BorrowingSerializer
 
@@ -20,49 +21,43 @@ class BorrowingsViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = super().get_queryset()
+        queryset = Borrowing.objects.all()
 
         if not user.is_staff:
             queryset = queryset.filter(user=user)
 
-        is_active = self.request.query_params.get("is_active", None)
-        if is_active:
+        is_active = self.request.query_params.get("is_active")
+        if is_active is not None:
             if is_active.lower() in ["true", "1"]:
                 queryset = queryset.filter(actual_return_date__isnull=True)
             elif is_active.lower() in ["false", "0"]:
                 queryset = queryset.filter(actual_return_date__isnull=False)
 
-        user_id = self.request.query_params.get("user_id", None)
-        if user_id and user.is_staff:
+        user_id = self.request.query_params.get("user_id")
+        if user_id:
+            if not user.is_staff:
+                raise ValidationError("Only staff users can filter by user_id.")
             queryset = queryset.filter(user_id=user_id)
 
         return queryset
 
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        borrowing = serializer.save()
-
-        return Response(self.get_serializer(borrowing).data, status=status.HTTP_201_CREATED)
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
     @action(detail=True, methods=["post"], url_path="return")
     def return_book(self, request, pk=None):
         borrowing = self.get_object()
 
         if borrowing.actual_return_date is not None:
-            return Response({"error": "Book has already been returned"}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError("Book has already been returned.")
 
-        actual_return_date_str = request.data.get('actual_return_date')
+        actual_return_date_str = request.data.get("actual_return_date")
         if not actual_return_date_str:
-            return Response({"detail": "actual_return_date is required."}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError("actual_return_date is required.")
 
-        actual_return_date = parse_datetime(actual_return_date_str)
+        actual_return_date = parse_date(actual_return_date_str)
         if not actual_return_date:
-            return Response({"detail": "actual_return_date format is invalid."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if actual_return_date > borrowing.expected_return_date:
-            return Response({"detail": "actual_return_date is late"}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError("actual_return_date format is invalid.")
 
         borrowing.actual_return_date = actual_return_date
         borrowing.save()
@@ -71,4 +66,5 @@ class BorrowingsViewSet(viewsets.ModelViewSet):
         book.inventory += 1
         book.save()
 
-        return Response(self.get_serializer(borrowing).data)
+        serializer = self.get_serializer(borrowing)
+        return Response(serializer.data)
