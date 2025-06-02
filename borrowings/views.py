@@ -1,13 +1,14 @@
-from django.utils.dateparse import parse_date
 from rest_framework.decorators import action
 from rest_framework import viewsets, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
+from django.utils.dateparse import parse_date
 
 from config.permissions import IsStaffUser
 from borrowings.models import Borrowing
 from borrowings.serializers import BorrowingSerializer
+from payments.models import Payment  # Додано імпорт
 
 
 class BorrowingViewSet(viewsets.ModelViewSet):
@@ -39,10 +40,41 @@ class BorrowingViewSet(viewsets.ModelViewSet):
                 raise ValidationError("Only staff users can filter by user_id.")
             queryset = queryset.filter(user_id=user_id)
 
+        for borrowing in queryset:
+            borrowing.update_status()
+            borrowing.save()
+
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        borrowing = serializer.save(user=self.request.user)
+
+        import stripe
+
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            line_items=[{
+                "price_data": {
+                    "currency": "usd",
+                    "product_data": {"name": borrowing.book.title},
+                    "unit_amount": int(float(borrowing.book.daily_fee) * 100),
+                },
+                "quantity": 1,
+            }],
+            mode="payment",
+            success_url="https://example.com/success",
+            cancel_url="https://example.com/cancel",
+        )
+
+        money_to_pay = borrowing.book.daily_fee  # тут можна розширити логіку, але хоча б не None
+
+        Payment.objects.create(
+            borrowing=borrowing,
+            status="PENDING",
+            session_id=session.id,
+            session_url=session.url,
+            money_to_pay=money_to_pay,
+        )
 
     @action(detail=True, methods=["post"], url_path="return")
     def return_book(self, request, pk=None):

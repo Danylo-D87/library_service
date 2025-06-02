@@ -10,7 +10,7 @@ class Payment(models.Model):
         ("FINE", "Fine"),
     )
 
-    borrowing = models.ForeignKey("Borrowing", on_delete=models.CASCADE, related_name="payments")
+    borrowing = models.ForeignKey("borrowings.Borrowing", on_delete=models.CASCADE, related_name="payments")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="PENDING")
     type = models.CharField(max_length=10, choices=TYPE_CHOICES)
     session_id = models.CharField(max_length=255, blank=True, null=True)

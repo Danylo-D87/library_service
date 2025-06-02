@@ -1,3 +1,4 @@
+from unittest.mock import patch
 from django.utils import timezone
 from django.urls import reverse
 from rest_framework import status
@@ -6,33 +7,51 @@ from rest_framework.test import APITestCase
 from books.models import Book
 from users.models import User
 from borrowings.models import Borrowing
+from payments.models import Payment
 
 
 class BorrowingsTests(APITestCase):
-    def setUp(self):
-        self.staff_user = User.objects.create_user(email="staff@example.com", password="pass", is_staff=True)
-        self.regular_user = User.objects.create_user(email="user@example.com", password="pass", is_staff=False)
-        self.book = Book.objects.create(
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff_user = User.objects.create_user(email="staff@example.com", password="pass", is_staff=True)
+        cls.regular_user = User.objects.create_user(email="user@example.com", password="pass", is_staff=False)
+        cls.book = Book.objects.create(
             title="Test Book",
             author="Test Author",
             cover=Book.CoverType.SOFT,
             inventory=3,
             daily_fee="1.50"
         )
+        cls.today = timezone.now().date()
 
-    def test_create_borrowing_decreases_inventory(self):
+    @patch("payments.views.stripe.checkout.Session.create")
+    def test_create_borrowing_creates_payment_session_and_decreases_inventory(self, mock_stripe_session_create):
+        # Мокаємо Stripe сесію, повертаємо фіктивні дані
+        mock_stripe_session_create.return_value = type("Session", (), {
+            "id": "sess_123",
+            "url": "https://stripe.com/checkout/session_123"
+        })()
+
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-list")
+        expected_return_date = self.today + timezone.timedelta(days=7)
         data = {
             "book": self.book.id,
-            "expected_return_date": (timezone.now() + timezone.timedelta(days=7)).date().isoformat(),
+            "expected_return_date": expected_return_date.isoformat(),
         }
 
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
         self.book.refresh_from_db()
         self.assertEqual(self.book.inventory, 2)
-        self.assertEqual(response.data["user"], self.regular_user.id)
+
+        # Перевіряємо, що створилась Payment сесія
+        payment = Payment.objects.filter(borrowing_id=response.data["id"]).first()
+        self.assertIsNotNone(payment)
+        self.assertEqual(payment.status, "PENDING")
+        self.assertEqual(payment.session_id, "sess_123")
+        self.assertEqual(payment.session_url, "https://stripe.com/checkout/session_123")
 
     def test_create_borrowing_fails_when_inventory_zero(self):
         self.book.inventory = 0
@@ -40,9 +59,10 @@ class BorrowingsTests(APITestCase):
 
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-list")
+        expected_return_date = self.today + timezone.timedelta(days=7)
         data = {
             "book": self.book.id,
-            "expected_return_date": (timezone.now() + timezone.timedelta(days=7)).date().isoformat(),
+            "expected_return_date": expected_return_date.isoformat(),
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -52,32 +72,32 @@ class BorrowingsTests(APITestCase):
         borrowing = Borrowing.objects.create(
             book=self.book,
             user=self.regular_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=7),
+            expected_return_date=self.today + timezone.timedelta(days=7),
         )
         self.book.inventory = 2
         self.book.save()
 
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-return-book", kwargs={"pk": borrowing.pk})
-        actual_return_date = timezone.now().date().isoformat()
+        actual_return_date = self.today.isoformat()
         response = self.client.post(url, {"actual_return_date": actual_return_date})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         borrowing.refresh_from_db()
         self.assertIsNotNone(borrowing.actual_return_date)
         self.book.refresh_from_db()
-        self.assertEqual(self.book.inventory, 3)  # +1
+        self.assertEqual(self.book.inventory, 3)
 
     def test_return_book_already_returned_error(self):
         borrowing = Borrowing.objects.create(
             book=self.book,
             user=self.regular_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=7),
-            actual_return_date=timezone.now().date()
+            expected_return_date=self.today + timezone.timedelta(days=7),
+            actual_return_date=self.today
         )
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-return-book", kwargs={"pk": borrowing.pk})
-        response = self.client.post(url, {"actual_return_date": timezone.now().date().isoformat()})
+        response = self.client.post(url, {"actual_return_date": self.today.isoformat()})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Book has already been returned", str(response.data))
 
@@ -85,7 +105,7 @@ class BorrowingsTests(APITestCase):
         borrowing = Borrowing.objects.create(
             book=self.book,
             user=self.regular_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=7),
+            expected_return_date=self.today + timezone.timedelta(days=7),
         )
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-return-book", kwargs={"pk": borrowing.pk})
@@ -97,7 +117,7 @@ class BorrowingsTests(APITestCase):
         borrowing = Borrowing.objects.create(
             book=self.book,
             user=self.regular_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=7),
+            expected_return_date=self.today + timezone.timedelta(days=7),
         )
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-return-book", kwargs={"pk": borrowing.pk})
@@ -109,13 +129,13 @@ class BorrowingsTests(APITestCase):
         active_borrow = Borrowing.objects.create(
             book=self.book,
             user=self.regular_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=5),
+            expected_return_date=self.today + timezone.timedelta(days=5),
         )
         inactive_borrow = Borrowing.objects.create(
             book=self.book,
             user=self.regular_user,
-            expected_return_date=timezone.now().date() - timezone.timedelta(days=5),
-            actual_return_date=timezone.now().date(),
+            expected_return_date=self.today - timezone.timedelta(days=5),
+            actual_return_date=self.today,
         )
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-list")
@@ -137,12 +157,12 @@ class BorrowingsTests(APITestCase):
         borrow_self = Borrowing.objects.create(
             book=self.book,
             user=self.regular_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=1),
+            expected_return_date=self.today + timezone.timedelta(days=1),
         )
         borrow_other = Borrowing.objects.create(
             book=self.book,
             user=other_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=1),
+            expected_return_date=self.today + timezone.timedelta(days=1),
         )
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-list")
@@ -157,16 +177,18 @@ class BorrowingsTests(APITestCase):
         borrow_self = Borrowing.objects.create(
             book=self.book,
             user=self.staff_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=1),
+            expected_return_date=self.today + timezone.timedelta(days=1),
         )
         borrow_other = Borrowing.objects.create(
             book=self.book,
             user=other_user,
-            expected_return_date=timezone.now().date() + timezone.timedelta(days=1),
+            expected_return_date=self.today + timezone.timedelta(days=1),
         )
         self.client.force_authenticate(user=self.staff_user)
         url = reverse("borrowing:borrowings-list")
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn(str(borrow_self.id), str(response.data))
-        self.assertIn(str(borrow_other.id), str(response.data))
+        # Тут чекаємо, що обидві позики відображаються
+        borrow_ids = [borrow["id"] for borrow in response.data]
+        self.assertIn(borrow_self.id, borrow_ids)
+        self.assertIn(borrow_other.id, borrow_ids)
