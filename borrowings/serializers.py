@@ -27,7 +27,7 @@ class BorrowingSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        book = validated_data.pop("book_id")
+        book = validated_data.pop("book")
 
         if book.inventory <= 0:
             raise serializers.ValidationError("Book inventory is empty")
@@ -36,7 +36,6 @@ class BorrowingSerializer(serializers.ModelSerializer):
         book.save()
 
         borrowing = Borrowing.objects.create(
-            borrow_date=timezone.now(),
             **validated_data
         )
 
@@ -45,10 +44,9 @@ class BorrowingSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         actual_return_date = validated_data.get("actual_return_date")
 
-        if actual_return_date and actual_return_date is None:
+        if actual_return_date is not None:
             instance.actual_return_date = actual_return_date
-
-            book = instance.book_id
+            book = instance.book
             book.inventory += 1
             book.save()
 

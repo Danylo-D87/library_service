@@ -2,7 +2,7 @@ from rest_framework import viewsets
 from rest_framework.permissions import SAFE_METHODS, AllowAny
 
 from books.models import Book
-from books.permissions import IsStaffUser
+from config.permissions import IsStaffUser
 from books.serializers import BookSerializer
 
 
