@@ -146,5 +146,3 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=100),
     "ROTATE_REFRESH_TOKENS": False,
 }
-
-STRIPE_SECRET_KEY = getattr(globals(), "STRIPE_SECRET_KEY", "test_key")
