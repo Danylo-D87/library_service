@@ -8,5 +8,5 @@ router = DefaultRouter()
 router.register("books", BookViewSet, basename="book")
 
 urlpatterns = [
-    router.urls,
+    *router.urls,
 ]
