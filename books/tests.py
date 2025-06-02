@@ -1,7 +1,7 @@
 from django.test import TestCase, RequestFactory
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
-from books.permissions import IsStaffUser
+from config.permissions import IsStaffUser
 
 User = get_user_model()
 
