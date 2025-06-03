@@ -20,7 +20,7 @@ class BorrowingSerializer(serializers.ModelSerializer):
             "actual_return_date",
             "status",
         )
-        read_only_fields = ("id", "borrow_date", "user", "status")
+        read_only_fields = ("id", "borrow_date", "user", "status","actual_return_date")
 
     def validate(self, data):
         expected_return_date = data.get("expected_return_date")
@@ -47,13 +47,4 @@ class BorrowingSerializer(serializers.ModelSerializer):
         return borrowing
 
     def update(self, instance, validated_data):
-        actual_return_date = validated_data.get("actual_return_date")
-
-        if actual_return_date is not None and instance.actual_return_date is None:
-            instance.actual_return_date = actual_return_date
-            book = instance.book
-            book.inventory += 1
-            book.save()
-
-        instance.save()
-        return instance
+        return super().update(instance, validated_data)

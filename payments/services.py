@@ -1,11 +1,27 @@
 import stripe
 from django.conf import settings
 from django.utils import timezone
+from decimal import Decimal
+
 
 from .models import Payment
 
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+def calculate_fine(borrowing):
+    if not borrowing.actual_return_date:
+        raise ValueError("Actual return date not set")
+
+    overdue_days = (borrowing.actual_return_date - borrowing.expected_return_date).days
+    if overdue_days <= 0:
+        return Decimal("0.00")
+
+    daily_fee = borrowing.book.daily_fee
+    fine = Decimal(overdue_days) * daily_fee * Decimal("2")
+    return fine.quantize(Decimal("0.01"))
+
 
 
 def calculate_borrowing_fee(borrowing):

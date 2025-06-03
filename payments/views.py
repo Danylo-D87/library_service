@@ -45,7 +45,6 @@ def stripe_webhook(request):
     event_type = event["type"]
     session = event["data"]["object"]
 
-    # 3найдемо пов'язаний платіж
     try:
         payment = Payment.objects.get(session_id=session["id"])
     except Payment.DoesNotExist:
@@ -65,8 +64,9 @@ def stripe_webhook(request):
             borrowing.save()
 
         elif payment.type == Payment.TypeType.FINE:
-            # Логіка для штрафів, якщо потрібна
-            pass
+            payment.status = Payment.StatusType.PAID
+            payment.save()
+            logger.info(f"Fine payment completed and marked as PAID for borrowing id={borrowing.id}")
 
         logger.info(f"Payment completed for session {session['id']}.")
 

@@ -1,6 +1,9 @@
-from django.utils.dateparse import parse_date
+import logging
+from decimal import Decimal
+
+from django.utils import timezone
 from rest_framework.decorators import action
-from rest_framework import viewsets, status, mixins
+from rest_framework import status, mixins
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
@@ -9,7 +12,14 @@ from rest_framework.viewsets import GenericViewSet
 from config.permissions import IsStaffUser
 from borrowings.models import Borrowing
 from borrowings.serializers import BorrowingSerializer
-from payments.services import create_stripe_payment_session, calculate_borrowing_fee
+from payments.services import (
+    create_stripe_payment_session,
+    calculate_borrowing_fee,
+    calculate_fine,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class BorrowingViewSet(
@@ -59,20 +69,32 @@ class BorrowingViewSet(
         if borrowing.actual_return_date is not None:
             raise ValidationError("Book has already been returned.")
 
-        actual_return_date_str = request.data.get("actual_return_date")
-        if not actual_return_date_str:
-            raise ValidationError("actual_return_date is required.")
-
-        actual_return_date = parse_date(actual_return_date_str)
-        if not actual_return_date:
-            raise ValidationError("actual_return_date format is invalid.")
-
+        actual_return_date = timezone.now().date()
         borrowing.actual_return_date = actual_return_date
+        borrowing.status = Borrowing.BorrowingStatus.RETURNED
         borrowing.save()
 
         book = borrowing.book
         book.inventory += 1
         book.save()
+
+        fine_amount = Decimal("0.00")
+        try:
+            fine_amount = calculate_fine(borrowing)
+        except Exception as e:
+            logger.error(f"Fine calculation failed for borrowing id={borrowing.id}: {e}")
+
+        if fine_amount > Decimal("0.00"):
+            fine_payment = create_stripe_payment_session(
+                borrowing,
+                payment_type="FINE",
+                amount_usd=fine_amount
+            )
+            return Response({
+                "borrowing": self.get_serializer(borrowing).data,
+                "fine_payment_url": fine_payment.session_url,
+                "fine_amount": fine_amount,
+            })
 
         serializer = self.get_serializer(borrowing)
         return Response(serializer.data)
