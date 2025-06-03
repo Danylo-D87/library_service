@@ -147,6 +147,3 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=100),
     "ROTATE_REFRESH_TOKENS": False,
 }
-
-STRIPE_SUCCESS_URL = "https://your-domain.com/payment-success"
-STRIPE_CANCEL_URL = "https://your-domain.com/payment-cancel"
