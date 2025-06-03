@@ -10,14 +10,18 @@ from borrowings.models import Borrowing
 
 class BorrowingsTests(APITestCase):
     def setUp(self):
-        self.staff_user = User.objects.create_user(email="staff@example.com", password="pass", is_staff=True)
-        self.regular_user = User.objects.create_user(email="user@example.com", password="pass", is_staff=False)
+        self.staff_user = User.objects.create_user(
+            email="staff@example.com", password="pass", is_staff=True
+        )
+        self.regular_user = User.objects.create_user(
+            email="user@example.com", password="pass", is_staff=False
+        )
         self.book = Book.objects.create(
             title="Test Book",
             author="Test Author",
             cover=Book.CoverType.SOFT,
             inventory=3,
-            daily_fee="1.50"
+            daily_fee="1.50",
         )
 
     def test_create_borrowing_decreases_inventory(self):
@@ -25,7 +29,9 @@ class BorrowingsTests(APITestCase):
         url = reverse("borrowing:borrowings-list")
         data = {
             "book": self.book.id,
-            "expected_return_date": (timezone.now() + timezone.timedelta(days=7)).date().isoformat(),
+            "expected_return_date": (timezone.now() + timezone.timedelta(days=7))
+            .date()
+            .isoformat(),
         }
 
         response = self.client.post(url, data)
@@ -42,7 +48,9 @@ class BorrowingsTests(APITestCase):
         url = reverse("borrowing:borrowings-list")
         data = {
             "book": self.book.id,
-            "expected_return_date": (timezone.now() + timezone.timedelta(days=7)).date().isoformat(),
+            "expected_return_date": (timezone.now() + timezone.timedelta(days=7))
+            .date()
+            .isoformat(),
         }
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -73,11 +81,13 @@ class BorrowingsTests(APITestCase):
             book=self.book,
             user=self.regular_user,
             expected_return_date=timezone.now().date() + timezone.timedelta(days=7),
-            actual_return_date=timezone.now().date()
+            actual_return_date=timezone.now().date(),
         )
         self.client.force_authenticate(user=self.regular_user)
         url = reverse("borrowing:borrowings-return-book", kwargs={"pk": borrowing.pk})
-        response = self.client.post(url, {"actual_return_date": timezone.now().date().isoformat()})
+        response = self.client.post(
+            url, {"actual_return_date": timezone.now().date().isoformat()}
+        )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Book has already been returned", str(response.data))
 
@@ -133,7 +143,9 @@ class BorrowingsTests(APITestCase):
         self.assertNotIn(active_borrow.id, borrow_ids)
 
     def test_regular_user_sees_only_own_borrowings(self):
-        other_user = User.objects.create_user(email="other@example.com", password="pass")
+        other_user = User.objects.create_user(
+            email="other@example.com", password="pass"
+        )
         borrow_self = Borrowing.objects.create(
             book=self.book,
             user=self.regular_user,
@@ -153,7 +165,9 @@ class BorrowingsTests(APITestCase):
         self.assertNotIn(borrow_other.id, borrow_ids)
 
     def test_staff_user_sees_all_borrowings(self):
-        other_user = User.objects.create_user(email="other2@example.com", password="pass")
+        other_user = User.objects.create_user(
+            email="other2@example.com", password="pass"
+        )
         borrow_self = Borrowing.objects.create(
             book=self.book,
             user=self.staff_user,

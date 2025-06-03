@@ -20,14 +20,16 @@ class BorrowingSerializer(serializers.ModelSerializer):
             "actual_return_date",
             "status",
         )
-        read_only_fields = ("id", "borrow_date", "user", "status","actual_return_date")
+        read_only_fields = ("id", "borrow_date", "user", "status", "actual_return_date")
 
     def validate(self, data):
         expected_return_date = data.get("expected_return_date")
         borrow_date = timezone.now().date()
 
         if expected_return_date < borrow_date:
-            raise serializers.ValidationError("Expected return date cannot be before borrow date")
+            raise serializers.ValidationError(
+                "Expected return date cannot be before borrow date"
+            )
 
         book = data.get("book")
         if book.inventory <= 0:

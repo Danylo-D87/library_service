@@ -66,7 +66,9 @@ def stripe_webhook(request):
         elif payment.type == Payment.TypeType.FINE:
             payment.status = Payment.StatusType.PAID
             payment.save()
-            logger.info(f"Fine payment completed and marked as PAID for borrowing id={borrowing.id}")
+            logger.info(
+                f"Fine payment completed and marked as PAID for borrowing id={borrowing.id}"
+            )
 
         logger.info(f"Payment completed for session {session['id']}.")
 
@@ -75,9 +77,13 @@ def stripe_webhook(request):
             if book.inventory is not None:
                 book.inventory += 1
                 book.save()
-                logger.info(f"Inventory restored for book id={book.id} due to {event_type} event.")
+                logger.info(
+                    f"Inventory restored for book id={book.id} due to {event_type} event."
+                )
             else:
-                logger.error(f"Book inventory is None for book id={book.id} on {event_type} event.")
+                logger.error(
+                    f"Book inventory is None for book id={book.id} on {event_type} event."
+                )
 
             payment.status = Payment.StatusType.CANCELED
             payment.save()

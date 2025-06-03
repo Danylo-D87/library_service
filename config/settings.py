@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/5.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
+
 from datetime import timedelta
 from pathlib import Path
 
@@ -139,7 +140,6 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
-
 }
 
 SIMPLE_JWT = {
@@ -150,4 +150,3 @@ SIMPLE_JWT = {
 
 STRIPE_SECRET_KEY = "sk_test_51RVr2GP2o4kbBVlJ1yOXQdhvtVjsKsdWqerZxEMjK4sJsqlp0RECB51AFx6sf9W3SliiIfRblvKcnnfHxfZW95Zb00XCva6RSZ"
 STRIPE_PUBLISHABLE_KEY = "pk_test_51RVr2GP2o4kbBVlJ5rLZb02VVQhw4bvpvGD6sIX9oqRXYbQUDhDMeLcBsvJxVkg7sGj5Sla8gwK9m8FQkpmIjveL00mBgVC4NU"
-

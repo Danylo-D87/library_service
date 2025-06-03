@@ -82,19 +82,21 @@ class BorrowingViewSet(
         try:
             fine_amount = calculate_fine(borrowing)
         except Exception as e:
-            logger.error(f"Fine calculation failed for borrowing id={borrowing.id}: {e}")
+            logger.error(
+                f"Fine calculation failed for borrowing id={borrowing.id}: {e}"
+            )
 
         if fine_amount > Decimal("0.00"):
             fine_payment = create_stripe_payment_session(
-                borrowing,
-                payment_type="FINE",
-                amount_usd=fine_amount
+                borrowing, payment_type="FINE", amount_usd=fine_amount
             )
-            return Response({
-                "borrowing": self.get_serializer(borrowing).data,
-                "fine_payment_url": fine_payment.session_url,
-                "fine_amount": fine_amount,
-            })
+            return Response(
+                {
+                    "borrowing": self.get_serializer(borrowing).data,
+                    "fine_payment_url": fine_payment.session_url,
+                    "fine_amount": fine_amount,
+                }
+            )
 
         serializer = self.get_serializer(borrowing)
         return Response(serializer.data)
@@ -134,9 +136,10 @@ class BorrowingCreateViewSet(
             borrowing.delete()
             raise ValidationError(str(e))
 
-        payment = create_stripe_payment_session(borrowing, payment_type="PAYMENT", amount_usd=amount)
+        payment = create_stripe_payment_session(
+            borrowing, payment_type="PAYMENT", amount_usd=amount
+        )
 
         return Response(
-            {"checkout_url": payment.session_url},
-            status=status.HTTP_200_OK
+            {"checkout_url": payment.session_url}, status=status.HTTP_200_OK
         )

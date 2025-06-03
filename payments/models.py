@@ -4,12 +4,12 @@ from django.db import models
 class Payment(models.Model):
 
     class StatusType(models.TextChoices):
-        PENDING  = "PENDING", "Pending"
-        PAID  = "PAID", "Paid"
+        PENDING = "PENDING", "Pending"
+        PAID = "PAID", "Paid"
 
     class TypeType(models.TextChoices):
         PAYMENT = "PAYMENT", "Payment"
-        FINE  = "FINE", "Fine"
+        FINE = "FINE", "Fine"
 
     status = models.CharField(
         max_length=10,
