@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.utils import timezone
 from rest_framework.decorators import action
-from rest_framework import status, mixins
+from rest_framework import status, mixins, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
@@ -22,13 +22,7 @@ from payments.services import (
 logger = logging.getLogger(__name__)
 
 
-class BorrowingViewSet(
-    mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin,
-    mixins.DestroyModelMixin,
-    mixins.ListModelMixin,
-    GenericViewSet,
-):
+class BorrowingViewSet(viewsets.ModelViewSet):
     queryset = Borrowing.objects.all()
     serializer_class = BorrowingSerializer
 
@@ -59,8 +53,46 @@ class BorrowingViewSet(
 
         return queryset
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        book = serializer.validated_data["book"]
+
+        if book.inventory <= 0:
+            raise ValidationError("Book inventory is empty")
+
+        borrowing = Borrowing.objects.create(
+            book=serializer.validated_data["book"],
+            expected_return_date=serializer.validated_data["expected_return_date"],
+            user=user,
+            status=Borrowing.BorrowingStatus.WAITING_PAYMENT,
+        )
+
+        book.inventory -= 1
+        book.save()
+
+        try:
+            amount = calculate_borrowing_fee(borrowing)
+        except ValueError as e:
+            borrowing.delete()
+            raise ValidationError(str(e))
+
+        payment = create_stripe_payment_session(
+            borrowing, payment_type="PAYMENT", amount_usd=amount
+        )
+
+        borrowing_data = self.get_serializer(borrowing).data
+        return Response(
+            {
+                "checkout_url": payment.session_url,
+                "borrowing": borrowing_data,
+            },
+            status=status.HTTP_201_CREATED
+        )
 
     @action(detail=True, methods=["post"], url_path="return")
     def return_book(self, request, pk=None):
@@ -108,38 +140,6 @@ class BorrowingCreateViewSet(
 ):
     queryset = Borrowing.objects.all()
     serializer_class = BorrowingSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated()]
 
-    def create(self, request, payment_session=None, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
 
-        user = request.user
-        book = serializer.validated_data["book"]
-
-        if book.inventory <= 0:
-            raise ValidationError("Book is not available for borrowing")
-
-        borrowing = Borrowing.objects.create(
-            book=serializer.validated_data["book"],
-            expected_return_date=serializer.validated_data["expected_return_date"],
-            user=user,
-            status=Borrowing.BorrowingStatus.WAITING_PAYMENT,
-        )
-
-        book.inventory -= 1
-        book.save()
-
-        try:
-            amount = calculate_borrowing_fee(borrowing)
-        except ValueError as e:
-            borrowing.delete()
-            raise ValidationError(str(e))
-
-        payment = create_stripe_payment_session(
-            borrowing, payment_type="PAYMENT", amount_usd=amount
-        )
-
-        return Response(
-            {"checkout_url": payment.session_url}, status=status.HTTP_200_OK
-        )
