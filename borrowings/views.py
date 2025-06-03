@@ -1,13 +1,25 @@
-from django.utils.dateparse import parse_date
+import logging
+from decimal import Decimal
+
+from django.utils import timezone
 from rest_framework.decorators import action
-from rest_framework import viewsets, status
+from rest_framework import status, mixins, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
+from rest_framework.viewsets import GenericViewSet
 
 from config.permissions import IsStaffUser
 from borrowings.models import Borrowing
 from borrowings.serializers import BorrowingSerializer
+from payments.services import (
+    create_stripe_payment_session,
+    calculate_borrowing_fee,
+    calculate_fine,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class BorrowingViewSet(viewsets.ModelViewSet):
@@ -41,8 +53,46 @@ class BorrowingViewSet(viewsets.ModelViewSet):
 
         return queryset
 
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        book = serializer.validated_data["book"]
+
+        if book.inventory <= 0:
+            raise ValidationError("Book inventory is empty")
+
+        borrowing = Borrowing.objects.create(
+            book=serializer.validated_data["book"],
+            expected_return_date=serializer.validated_data["expected_return_date"],
+            user=user,
+            status=Borrowing.BorrowingStatus.WAITING_PAYMENT,
+        )
+
+        book.inventory -= 1
+        book.save()
+
+        try:
+            amount = calculate_borrowing_fee(borrowing)
+        except ValueError as e:
+            borrowing.delete()
+            raise ValidationError(str(e))
+
+        payment = create_stripe_payment_session(
+            borrowing, payment_type="PAYMENT", amount_usd=amount
+        )
+
+        borrowing_data = self.get_serializer(borrowing).data
+        return Response(
+            {
+                "checkout_url": payment.session_url,
+                "borrowing": borrowing_data,
+            },
+            status=status.HTTP_201_CREATED
+        )
 
     @action(detail=True, methods=["post"], url_path="return")
     def return_book(self, request, pk=None):
@@ -51,20 +101,45 @@ class BorrowingViewSet(viewsets.ModelViewSet):
         if borrowing.actual_return_date is not None:
             raise ValidationError("Book has already been returned.")
 
-        actual_return_date_str = request.data.get("actual_return_date")
-        if not actual_return_date_str:
-            raise ValidationError("actual_return_date is required.")
-
-        actual_return_date = parse_date(actual_return_date_str)
-        if not actual_return_date:
-            raise ValidationError("actual_return_date format is invalid.")
-
+        actual_return_date = timezone.now().date()
         borrowing.actual_return_date = actual_return_date
+        borrowing.status = Borrowing.BorrowingStatus.RETURNED
         borrowing.save()
 
         book = borrowing.book
         book.inventory += 1
         book.save()
 
+        fine_amount = Decimal("0.00")
+        try:
+            fine_amount = calculate_fine(borrowing)
+        except Exception as e:
+            logger.error(
+                f"Fine calculation failed for borrowing id={borrowing.id}: {e}"
+            )
+
+        if fine_amount > Decimal("0.00"):
+            fine_payment = create_stripe_payment_session(
+                borrowing, payment_type="FINE", amount_usd=fine_amount
+            )
+            return Response(
+                {
+                    "borrowing": self.get_serializer(borrowing).data,
+                    "fine_payment_url": fine_payment.session_url,
+                    "fine_amount": fine_amount,
+                }
+            )
+
         serializer = self.get_serializer(borrowing)
         return Response(serializer.data)
+
+
+class BorrowingCreateViewSet(
+    mixins.CreateModelMixin,
+    GenericViewSet,
+):
+    queryset = Borrowing.objects.all()
+    serializer_class = BorrowingSerializer
+    permission_classes = [IsAuthenticated()]
+
+

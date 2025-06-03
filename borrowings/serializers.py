@@ -18,46 +18,35 @@ class BorrowingSerializer(serializers.ModelSerializer):
             "borrow_date",
             "expected_return_date",
             "actual_return_date",
+            "status",
         )
-        read_only_fields = ("borrow_date", "user")
+        read_only_fields = ("id", "borrow_date", "user", "status", "actual_return_date")
 
     def validate(self, data):
         expected_return_date = data.get("expected_return_date")
         borrow_date = timezone.now().date()
 
         if expected_return_date < borrow_date:
-            raise serializers.ValidationError("Expected return date cannot be before borrow date")
+            raise serializers.ValidationError(
+                "Expected return date cannot be before borrow date"
+            )
+
+        book = data.get("book")
+        if book.inventory <= 0:
+            raise serializers.ValidationError("Book inventory is empty")
 
         return data
 
     def create(self, validated_data):
-        book = validated_data["book"]
-
-        if book.inventory <= 0:
-            raise serializers.ValidationError("Book inventory is empty")
-
-        # Вилучаємо user з context, а не з validated_data
         user = self.context["request"].user
-
-        book.inventory -= 1
-        book.save()
-
         borrowing = Borrowing.objects.create(
-            book=book,
+            book=validated_data["book"],
             expected_return_date=validated_data["expected_return_date"],
-            user=user
+            user=user,
+            status=Borrowing.BorrowingStatus.WAITING_PAYMENT,
+            borrow_date=None,
         )
-
         return borrowing
 
     def update(self, instance, validated_data):
-        actual_return_date = validated_data.get("actual_return_date")
-
-        if actual_return_date is not None and instance.actual_return_date is None:
-            instance.actual_return_date = actual_return_date
-            book = instance.book
-            book.inventory += 1
-            book.save()
-
-        instance.save()
-        return instance
+        return super().update(instance, validated_data)
