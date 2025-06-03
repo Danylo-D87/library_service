@@ -148,8 +148,5 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": False,
 }
 
-STRIPE_SECRET_KEY = ""
-STRIPE_PUBLISHABLE_KEY = ""
-
 STRIPE_SUCCESS_URL = "https://your-domain.com/payment-success"
 STRIPE_CANCEL_URL = "https://your-domain.com/payment-cancel"
