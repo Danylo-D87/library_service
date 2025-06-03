@@ -1,9 +1,23 @@
 import stripe
 from django.conf import settings
+from django.utils import timezone
+
 from .models import Payment
 
 
 stripe.api_key = settings.STRIPE_SECRET_KEY
+
+
+def calculate_borrowing_fee(borrowing):
+    daily_fee = borrowing.book.daily_fee
+
+    start_date = borrowing.borrow_date or timezone.now().date()
+    days = (borrowing.expected_return_date - start_date).days
+
+    if days <= 0:
+        raise ValueError("Expected return date must be after start date")
+
+    return daily_fee * days
 
 
 def create_stripe_payment_session(borrowing, payment_type, amount_usd):

@@ -1,16 +1,24 @@
 from django.utils.dateparse import parse_date
 from rest_framework.decorators import action
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, mixins
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
+from rest_framework.viewsets import GenericViewSet
 
 from config.permissions import IsStaffUser
 from borrowings.models import Borrowing
 from borrowings.serializers import BorrowingSerializer
+from payments.services import create_stripe_payment_session, calculate_borrowing_fee
 
 
-class BorrowingViewSet(viewsets.ModelViewSet):
+class BorrowingViewSet(
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    mixins.ListModelMixin,
+    GenericViewSet,
+):
     queryset = Borrowing.objects.all()
     serializer_class = BorrowingSerializer
 
@@ -68,3 +76,45 @@ class BorrowingViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(borrowing)
         return Response(serializer.data)
+
+
+class BorrowingCreateViewSet(
+    mixins.CreateModelMixin,
+    GenericViewSet,
+):
+    queryset = Borrowing.objects.all()
+    serializer_class = BorrowingSerializer
+    permission_classes = [IsAuthenticated]
+
+    def create(self, request, payment_session=None, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        book = serializer.validated_data["book"]
+
+        if book.inventory <= 0:
+            raise ValidationError("Book is not available for borrowing")
+
+        borrowing = Borrowing.objects.create(
+            book=serializer.validated_data["book"],
+            expected_return_date=serializer.validated_data["expected_return_date"],
+            user=user,
+            status=Borrowing.BorrowingStatus.WAITING_PAYMENT,
+        )
+
+        book.inventory -= 1
+        book.save()
+
+        try:
+            amount = calculate_borrowing_fee(borrowing)
+        except ValueError as e:
+            borrowing.delete()
+            raise ValidationError(str(e))
+
+        payment = create_stripe_payment_session(borrowing, payment_type="PAYMENT", amount_usd=amount)
+
+        return Response(
+            {"checkout_url": payment.session_url},
+            status=status.HTTP_200_OK
+        )

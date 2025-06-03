@@ -18,8 +18,9 @@ class BorrowingSerializer(serializers.ModelSerializer):
             "borrow_date",
             "expected_return_date",
             "actual_return_date",
+            "status",
         )
-        read_only_fields = ("borrow_date", "user")
+        read_only_fields = ("id", "borrow_date", "user", "status")
 
     def validate(self, data):
         expected_return_date = data.get("expected_return_date")
@@ -28,26 +29,21 @@ class BorrowingSerializer(serializers.ModelSerializer):
         if expected_return_date < borrow_date:
             raise serializers.ValidationError("Expected return date cannot be before borrow date")
 
-        return data
-
-    def create(self, validated_data):
-        book = validated_data["book"]
-
+        book = data.get("book")
         if book.inventory <= 0:
             raise serializers.ValidationError("Book inventory is empty")
 
-        # Вилучаємо user з context, а не з validated_data
+        return data
+
+    def create(self, validated_data):
         user = self.context["request"].user
-
-        book.inventory -= 1
-        book.save()
-
         borrowing = Borrowing.objects.create(
-            book=book,
+            book=validated_data["book"],
             expected_return_date=validated_data["expected_return_date"],
-            user=user
+            user=user,
+            status=Borrowing.BorrowingStatus.WAITING_PAYMENT,
+            borrow_date=None,
         )
-
         return borrowing
 
     def update(self, instance, validated_data):
