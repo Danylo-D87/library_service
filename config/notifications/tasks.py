@@ -4,6 +4,7 @@ from celery import shared_task
 import requests
 from django.conf import settings
 
+
 @shared_task
 def send_telegram_payment_notification(data: dict):
     try:
@@ -19,7 +20,7 @@ def send_telegram_payment_notification(data: dict):
         payload = {
             "chat_id": settings.TELEGRAM_CHAT_ID,
             "text": message,
-            "parse_mode": "Markdown"
+            "parse_mode": "Markdown",
         }
         requests.post(url, data=payload)
     except Exception as e:

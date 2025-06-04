@@ -75,14 +75,15 @@ def stripe_webhook(request):
 
         # === 🔄 Telegram async notification ===
 
-        send_telegram_payment_notification.delay({
-            "user": payment.user.email,
-            "type": payment.type.upper(),
-            "amount": str(payment.amount),
-            "borrowing_id": borrowing.id,
-            "book": book.title,
-        })
-
+        send_telegram_payment_notification.delay(
+            {
+                "user": payment.user.email,
+                "type": payment.type.upper(),
+                "amount": str(payment.amount),
+                "borrowing_id": borrowing.id,
+                "book": book.title,
+            }
+        )
 
     elif event_type in ["checkout.session.expired", "payment_intent.canceled"]:
         if payment.status != Payment.StatusType.PAID:

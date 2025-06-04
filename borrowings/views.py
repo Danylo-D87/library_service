@@ -53,7 +53,6 @@ class BorrowingViewSet(viewsets.ModelViewSet):
 
         return queryset
 
-
     def create(self, request, *args, **kwargs):
 
         serializer = self.get_serializer(data=request.data)
@@ -91,7 +90,7 @@ class BorrowingViewSet(viewsets.ModelViewSet):
                 "checkout_url": payment.session_url,
                 "borrowing": borrowing_data,
             },
-            status=status.HTTP_201_CREATED
+            status=status.HTTP_201_CREATED,
         )
 
     @action(detail=True, methods=["post"], url_path="return")
@@ -141,5 +140,3 @@ class BorrowingCreateViewSet(
     queryset = Borrowing.objects.all()
     serializer_class = BorrowingSerializer
     permission_classes = [IsAuthenticated()]
-
-
