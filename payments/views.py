@@ -9,6 +9,7 @@ import stripe
 import logging
 
 from borrowings.models import Borrowing
+from config.notifications.tasks import send_telegram_payment_notification
 from .models import Payment
 from .serializers import PaymentSerializer
 
@@ -71,6 +72,18 @@ def stripe_webhook(request):
             )
 
         logger.info(f"Payment completed for session {session['id']}.")
+
+        # === 🔄 Telegram async notification ===
+
+        send_telegram_payment_notification.delay(
+            {
+                "user": payment.user.email,
+                "type": payment.type.upper(),
+                "amount": str(payment.amount),
+                "borrowing_id": borrowing.id,
+                "book": book.title,
+            }
+        )
 
     elif event_type in ["checkout.session.expired", "payment_intent.canceled"]:
         if payment.status != Payment.StatusType.PAID:
